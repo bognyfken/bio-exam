@@ -1,10 +1,22 @@
 // reading.js — режим «Чтение»: билеты, сгруппированные по разделам,
 // сворачиваемые, с блоком вопроса (подпункты), плашками и якорями.
 
-import { el, escapeHtml, clear } from './util.js';
+import { el, clear } from './util.js';
 import { cards } from './store.js';
+import { hasExt, ticketVersion, setTicketVersion, ticketView } from './version.js';
 
 let rendered = false;
+
+// Наполнить тело билета содержимым нужной версии (вопрос + проза).
+function fillBody(bodyContent, t, version) {
+  clear(bodyContent);
+  const view = ticketView(t, version);
+  if (view.subpoints.length) {
+    const ul = el('ul', {}, view.subpoints.map((s) => el('li', { text: s })));
+    bodyContent.appendChild(el('div', { class: 'ticket-question' }, [ul]));
+  }
+  bodyContent.appendChild(el('div', { class: 'prose', html: view.bodyHtml }));
+}
 
 function ticketNode(t, ctx) {
   const known = cards.isKnown(t.number);
@@ -37,13 +49,34 @@ function ticketNode(t, ctx) {
     chev,
   ]);
 
-  // Блок вопроса из подпунктов
+  // Тело билета: содержимое выбранной версии + (если есть расширенная) тумблер.
+  const bodyContent = el('div', { class: 'ticket-bodycontent' });
   const bodyChildren = [];
-  if (t.subpoints.length) {
-    const ul = el('ul', {}, t.subpoints.map((s) => el('li', { text: s })));
-    bodyChildren.push(el('div', { class: 'ticket-question' }, [ul]));
+
+  if (hasExt(t)) {
+    let ver = ticketVersion(t.number);
+    const seg = el('div', { class: 'seg ver-toggle' });
+    const mk = (val, label) => {
+      const b = el('button', { class: 'seg-btn' + (ver === val ? ' is-active' : ''), text: label,
+        onclick: (e) => {
+          e.stopPropagation();
+          if (ver === val) return;
+          ver = val;
+          setTicketVersion(t.number, val);
+          seg.querySelectorAll('.seg-btn').forEach((x) => x.classList.remove('is-active'));
+          b.classList.add('is-active');
+          fillBody(bodyContent, t, ver);
+        } });
+      return b;
+    };
+    seg.appendChild(mk('brief', 'Кратко'));
+    seg.appendChild(mk('ext', 'Подробно'));
+    bodyChildren.push(seg);
+    fillBody(bodyContent, t, ver);
+  } else {
+    fillBody(bodyContent, t, 'brief');
   }
-  bodyChildren.push(el('div', { class: 'prose', html: t.bodyHtml }));
+  bodyChildren.push(bodyContent);
 
   const body = el('div', { class: 'ticket-body' }, bodyChildren);
 

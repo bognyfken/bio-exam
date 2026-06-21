@@ -6,7 +6,11 @@
 // На file:// localStorage может быть недоступен — оборачиваем в try/catch,
 // деградируем до in-memory, чтобы интерфейс не падал.
 
-const KEY = { cards: 'bio.cards', tests: 'bio.tests', theme: 'bio.theme' };
+const KEY = {
+  cards: 'bio.cards', tests: 'bio.tests', theme: 'bio.theme',
+  settings: 'bio.settings',
+  quizSession: 'bio.quizSession', cardSession: 'bio.cardSession',
+};
 const mem = {}; // фолбэк, если localStorage недоступен
 
 function lsGet(k) {
@@ -14,6 +18,9 @@ function lsGet(k) {
 }
 function lsSet(k, v) {
   try { localStorage.setItem(k, v); } catch { mem[k] = v; }
+}
+function lsRemove(k) {
+  try { localStorage.removeItem(k); } catch { delete mem[k]; }
 }
 
 function readJSON(k, fallback) {
@@ -80,12 +87,30 @@ export const theme = {
   set(v) { if (v) lsSet(KEY.theme, v); },
 };
 
+// ── Настройки ──────────────────────────────────────────
+//   version       → 'brief' | 'ext'  (версия конспекта по умолчанию)
+//   verByTicket   → { [num]: 'brief' | 'ext' }  (переопределения по билетам)
+export const settings = {
+  all() { return readJSON(KEY.settings, {}); },
+  get(k, dflt) { const v = this.all()[k]; return v === undefined ? dflt : v; },
+  set(k, val) { const s = this.all(); s[k] = val; writeJSON(KEY.settings, s); },
+};
+
+// ── Незавершённые сессии (тест / карточки) ─────────────
+// Хранит снимок прогресса, чтобы продолжить после ухода в другой режим
+// или перезагрузки PWA. null — нет активной сессии.
+export const session = {
+  getQuiz() { return readJSON(KEY.quizSession, null); },
+  setQuiz(v) { if (v) writeJSON(KEY.quizSession, v); else lsRemove(KEY.quizSession); },
+  getCards() { return readJSON(KEY.cardSession, null); },
+  setCards(v) { if (v) writeJSON(KEY.cardSession, v); else lsRemove(KEY.cardSession); },
+};
+
 // ── Сброс всего прогресса ──────────────────────────────
 export function resetAll() {
-  try {
-    localStorage.removeItem(KEY.cards);
-    localStorage.removeItem(KEY.tests);
-  } catch {
-    delete mem[KEY.cards]; delete mem[KEY.tests];
-  }
+  // Сбрасываем прогресс и незавершённые сессии; настройки (тема/версия) не трогаем.
+  lsRemove(KEY.cards);
+  lsRemove(KEY.tests);
+  lsRemove(KEY.quizSession);
+  lsRemove(KEY.cardSession);
 }

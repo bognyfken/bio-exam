@@ -3,11 +3,14 @@
 import { parseKonspekt } from './parser.js';
 import { el, clear } from './util.js';
 import { theme as themeStore, cards } from './store.js';
+import { defaultVersion, setDefaultVersion } from './version.js';
 import * as Home from './home.js';
 import * as Reading from './reading.js';
 import * as Cards from './cards.js';
 import * as Quiz from './quiz.js';
 import * as Search from './search.js';
+import * as Glossary from './glossary.js';
+import { parseGlossary } from './glossary.js';
 
 const views = {
   home: document.getElementById('view-home'),
@@ -15,8 +18,9 @@ const views = {
   cards: document.getElementById('view-cards'),
   quiz: document.getElementById('view-quiz'),
   search: document.getElementById('view-search'),
+  gloss: document.getElementById('view-gloss'),
 };
-const MODE_TITLES = { home: 'Биология', read: 'Чтение', cards: 'Карточки', quiz: 'Тест', search: 'Поиск' };
+const MODE_TITLES = { home: 'Биология', read: 'Чтение', cards: 'Карточки', quiz: 'Тест', search: 'Поиск', gloss: 'Глоссарий' };
 
 let ctx = null;
 let currentMode = null;
@@ -41,6 +45,50 @@ function initTheme() {
   });
 }
 
+// ── Настройки (шестерёнка) ─────────────────────────────
+function openSettings() {
+  const scrimEl = el('div', { class: 'modal-scrim' });
+  const sheet = el('div', { class: 'modal-sheet', role: 'dialog', 'aria-label': 'Настройки' });
+  const close = () => scrimEl.remove();
+
+  sheet.appendChild(el('div', { class: 'modal-head' }, [
+    el('h2', { text: 'Настройки' }),
+    el('button', { class: 'icon-btn', 'aria-label': 'Закрыть', html:
+      '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+      onclick: close }),
+  ]));
+
+  // Версия конспекта по умолчанию (только если есть расширенная)
+  if (ctx?.data?.hasExt) {
+    const seg = el('div', { class: 'seg' });
+    const mk = (val, label) => {
+      const b = el('button', { class: 'seg-btn' + (defaultVersion() === val ? ' is-active' : ''), text: label,
+        onclick: () => {
+          setDefaultVersion(val);
+          seg.querySelectorAll('.seg-btn').forEach((x) => x.classList.remove('is-active'));
+          b.classList.add('is-active');
+          // «Чтение» строится один раз — сбрасываем флаг, чтобы билеты без своего
+          // переопределения подхватили новую версию по умолчанию при следующем входе.
+          Reading.resetRenderFlag();
+          if (currentMode === 'read') go('read');
+        } });
+      return b;
+    };
+    seg.appendChild(mk('brief', 'Краткая'));
+    seg.appendChild(mk('ext', 'Расширенная'));
+    sheet.appendChild(el('div', { class: 'modal-field' }, [
+      el('div', { class: 'field-label', text: 'Версия конспекта по умолчанию' }),
+      seg,
+      el('p', { class: 'modal-hint', text: 'Краткая — для повторения, расширенная — чтобы разобраться. Любой билет можно переключить отдельно прямо в «Чтении».' }),
+    ]));
+  }
+
+  scrimEl.appendChild(sheet);
+  scrimEl.addEventListener('click', (e) => { if (e.target === scrimEl) close(); });
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
+  document.body.appendChild(scrimEl);
+}
+
 // ── Drawer ─────────────────────────────────────────────
 const drawer = document.getElementById('drawer');
 const scrim = document.getElementById('drawerScrim');
@@ -60,7 +108,8 @@ function buildNav(mode) {
     }
   } else {
     for (const s of ctx.data.sections) {
-      const group = el('div', { class: 'nav-group' });
+      // Изначально все разделы свёрнуты — раскрываются тапом по заголовку.
+      const group = el('div', { class: 'nav-group collapsed' });
       const head = el('button', { class: 'nav-group-head' }, [
         el('span', { text: s.name }),
         el('span', { class: 'chev', html: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' }),
@@ -106,6 +155,7 @@ function go(mode) {
   else if (mode === 'cards') Cards.render(container, ctx);
   else if (mode === 'quiz') Quiz.render(container, ctx);
   else if (mode === 'search') Search.render(container, ctx);
+  else if (mode === 'gloss') Glossary.render(container, ctx);
 
   window.scrollTo({ top: 0 });
 }
@@ -127,26 +177,56 @@ function onProgressChange() {
 
 // ── Загрузка контента ──────────────────────────────────
 async function loadContent() {
-  const [mdRes, quizRes] = await Promise.allSettled([
+  const [mdRes, extRes, quizRes, glossRes] = await Promise.allSettled([
     fetch('content/konspekt.md').then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+    fetch('content/konspekt-ext.md').then((r) => (r.ok ? r.text() : null)),
     fetch('content/quiz.json').then((r) => (r.ok ? r.json() : [])),
+    fetch('content/glossary.md').then((r) => (r.ok ? r.text() : null)),
   ]);
   if (mdRes.status !== 'fulfilled') throw new Error('Не удалось загрузить конспект: ' + mdRes.reason);
   const data = parseKonspekt(mdRes.value);
+
+  // Расширенная версия — опциональна. Прикрепляем к билетам по номеру (t.ext).
+  data.hasExt = false;
+  if (extRes.status === 'fulfilled' && extRes.value) {
+    try {
+      const ext = parseKonspekt(extRes.value);
+      data.tickets.forEach((t) => {
+        const e = ext.byNumber.get(t.number);
+        if (e) {
+          t.ext = {
+            title: e.title, subpoints: e.subpoints, bodyHtml: e.bodyHtml,
+            bodyMarkdown: e.bodyMarkdown, plainText: e.plainText,
+          };
+          data.hasExt = true;
+        }
+      });
+    } catch (e) { console.warn('Расширенный конспект не разобран:', e); }
+  }
+
   const quiz = (quizRes.status === 'fulfilled' && Array.isArray(quizRes.value)) ? quizRes.value : [];
-  return { data, quiz };
+
+  // Глоссарий — опционален.
+  let glossary = null;
+  if (glossRes.status === 'fulfilled' && glossRes.value) {
+    try { glossary = parseGlossary(glossRes.value); }
+    catch (e) { console.warn('Глоссарий не разобран:', e); }
+  }
+
+  return { data, quiz, glossary };
 }
 
 async function main() {
   initTheme();
   initNavTabs();
   document.getElementById('navToggle').addEventListener('click', () => drawer.classList.contains('is-open') ? closeDrawer() : openDrawer());
+  document.getElementById('settingsToggle').addEventListener('click', openSettings);
   scrim.addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
   try {
-    const { data, quiz } = await loadContent();
-    ctx = { data, quiz, go, openTicket, openDrawer, onProgressChange };
+    const { data, quiz, glossary } = await loadContent();
+    ctx = { data, quiz, glossary, go, openTicket, openDrawer, onProgressChange };
 
     document.getElementById('loading').remove();
     buildNav('section');

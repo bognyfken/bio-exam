@@ -2,7 +2,8 @@
 // 1 билет = 1 карточка. Лицо: «Билет N. Название» + подпункты. Оборот: тело ответа.
 
 import { el, clear, shuffle } from './util.js';
-import { cards as store } from './store.js';
+import { cards as store, session } from './store.js';
+import { ticketVersion, ticketView } from './version.js';
 
 const state = {
   queue: [],      // массив ticket-объектов в порядке показа
@@ -36,12 +37,39 @@ function ticketsForScope(ctx) {
   return sec ? sec.tickets.slice() : [];
 }
 
+function active() { return state.queue.length > 0 && state.pos < state.queue.length; }
+
+function persist() {
+  if (!active()) { session.setCards(null); return; }
+  session.setCards({
+    scope: state.scope,
+    nums: state.queue.map((t) => t.number),
+    pos: state.pos,
+    session: state.session,
+  });
+}
+
+// Восстановить сессию из localStorage в state (после перезагрузки PWA).
+function ensureRestored(ctx) {
+  if (state.queue.length) return;
+  const s = session.getCards();
+  if (!s || !Array.isArray(s.nums)) return;
+  const queue = s.nums.map((n) => ctx.data.byNumber.get(n)).filter(Boolean);
+  if (!queue.length || s.pos >= queue.length) { session.setCards(null); return; }
+  state.scope = s.scope || 'all';
+  state.queue = queue;
+  state.pos = s.pos || 0;
+  state.flipped = false;
+  state.session = s.session || { know: 0, dont: 0 };
+}
+
 function startSession(ctx, container) {
   const pool = ticketsForScope(ctx);
   state.queue = buildQueue(pool);
   state.pos = 0;
   state.flipped = false;
   state.session = { know: 0, dont: 0 };
+  persist();
   renderCard(ctx, container);
 }
 
@@ -58,6 +86,18 @@ function renderSetup(ctx, container) {
     ogt.appendChild(el('option', { value: 'ticket:' + t.number, text: `${t.number}. ${t.title}` })));
   sel.appendChild(ogt);
   sel.value = state.scope;
+
+  // Незавершённая сессия — предложить продолжить
+  if (active()) {
+    container.appendChild(el('div', { class: 'card resume-card' }, [
+      el('div', {}, [
+        el('div', { class: 'resume-title', text: 'Есть незаконченный набор' }),
+        el('div', { class: 'resume-sub', text: `Осталось карточек: ${state.queue.length - state.pos}` }),
+      ]),
+      el('button', { class: 'btn btn-primary', text: 'Продолжить',
+        onclick: () => renderCard(ctx, container) }),
+    ]));
+  }
 
   container.appendChild(el('div', { class: 'card cards-setup' }, [
     el('h2', { class: 'h-title', text: 'Карточки' }),
@@ -82,16 +122,17 @@ function renderCard(ctx, container) {
     el('span', { html: `Не знаю <b>${state.session.dont}</b>` }),
   ]);
 
+  const view = ticketView(t, ticketVersion(t.number));
   const front = el('div', { class: 'flash-face flash-front' }, [
     el('div', { class: 'flash-eyebrow', text: `${t.section} · Билет ${t.number}` }),
-    el('div', { class: 'flash-q-title', text: t.title }),
+    el('div', { class: 'flash-q-title', text: view.title }),
     el('ul', { style: 'margin:0;padding-left:20px;color:var(--muted)' },
-      t.subpoints.map((s) => el('li', { text: s }))),
+      view.subpoints.map((s) => el('li', { text: s }))),
     el('div', { class: 'flash-hint', text: 'Нажми, чтобы увидеть ответ' }),
   ]);
   const back = el('div', { class: 'flash-face flash-back' }, [
     el('div', { class: 'flash-eyebrow', text: `Ответ · Билет ${t.number}` }),
-    el('div', { class: 'prose', html: t.bodyHtml }),
+    el('div', { class: 'prose', html: view.bodyHtml }),
   ]);
   const card = el('div', { class: 'flashcard' + (state.flipped ? ' flipped' : '') }, [
     el('div', { class: 'flash-inner' }, [front, back]),
@@ -108,6 +149,7 @@ function renderCard(ctx, container) {
     }
     state.pos++;
     state.flipped = false;
+    persist();
     ctx.onProgressChange();
     renderCard(ctx, container);
   };
@@ -121,7 +163,7 @@ function renderCard(ctx, container) {
     el('button', { class: 'btn btn-sm btn-ghost', text: '← Набор', onclick: () => renderSetup(ctx, container) }),
     el('span', { class: 'spacer' }),
     el('button', { class: 'btn btn-sm', text: '🔀 Перемешать',
-      onclick: () => { state.queue = shuffle(state.queue.slice(state.pos)); state.pos = 0; state.flipped = false; renderCard(ctx, container); } }),
+      onclick: () => { state.queue = shuffle(state.queue.slice(state.pos)); state.pos = 0; state.flipped = false; persist(); renderCard(ctx, container); } }),
   ]);
 
   container.appendChild(el('div', { class: 'flashwrap' }, [topbar, stats, card, actions]));
@@ -129,6 +171,7 @@ function renderCard(ctx, container) {
 }
 
 function renderDone(ctx, container) {
+  session.setCards(null); // сессия пройдена — снимок больше не нужен
   clear(container);
   container.appendChild(el('div', { class: 'card done-banner' }, [
     el('div', { class: 'big', text: '🎉' }),
@@ -156,8 +199,11 @@ function bindKeys(card, grade) {
 }
 
 export function render(container, ctx) {
-  // Каждый вход в режим — экран выбора набора (сессии не накапливаем).
-  renderSetup(ctx, container);
+  // Есть незавершённая сессия (в памяти или из localStorage) — продолжаем её,
+  // иначе показываем экран выбора набора.
+  ensureRestored(ctx);
+  if (active()) renderCard(ctx, container);
+  else renderSetup(ctx, container);
 }
 
 export function unmount() {

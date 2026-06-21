@@ -1,6 +1,6 @@
 // sw.js — service worker: офлайн-кэш (precache + stale-while-revalidate).
 // Версию бампать при изменении ассетов/контента, чтобы клиенты обновились.
-const VERSION = 'bio-v1';
+const VERSION = 'bio-v4';
 const CACHE = `bio-cache-${VERSION}`;
 
 const PRECACHE = [
@@ -14,13 +14,17 @@ const PRECACHE = [
   'js/parser.js',
   'js/store.js',
   'js/util.js',
+  'js/version.js',
   'js/reading.js',
   'js/cards.js',
   'js/quiz.js',
   'js/search.js',
+  'js/glossary.js',
   'js/home.js',
   'content/konspekt.md',
+  'content/konspekt-ext.md',
   'content/quiz.json',
+  'content/glossary.md',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
