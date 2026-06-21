@@ -1,6 +1,6 @@
 // sw.js — service worker: офлайн-кэш (precache + stale-while-revalidate).
 // Версию бампать при изменении ассетов/контента, чтобы клиенты обновились.
-const VERSION = 'bio-v4';
+const VERSION = 'bio-v5';
 const CACHE = `bio-cache-${VERSION}`;
 
 const PRECACHE = [

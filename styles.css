@@ -366,7 +366,9 @@ select, input[type="text"], input[type="number"], input[type="search"] {
 mark { background: var(--mnemo-bg); color: var(--mnemo-ink); border-radius: 3px; padding: 0 2px; }
 
 /* ── Глоссарий ────────────────────────────────────── */
-.g-controls { position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top)); z-index: 10; background: var(--bg); padding: 6px 0 8px; margin: 0 0 6px; }
+/* НЕ sticky: блок управления высокий (поиск + пилюли + алфавит); если его
+   закрепить, на телефоне он занимает почти весь экран и список не листается. */
+.g-controls { background: var(--bg); padding: 2px 0 8px; margin: 0 0 6px; }
 .g-controls .search-count { margin: 8px 2px 0; }
 .g-pills { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 2px 4px; }
 .g-pill {
