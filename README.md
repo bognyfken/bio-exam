@@ -75,16 +75,35 @@ npx serve public          # http://localhost:3000
 wrangler pages dev public
 ```
 
-## Деплой на Cloudflare Pages
+## Деплой
 
-В окружении заданы `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`.
+### Основной хостинг — GitHub Pages (доступен в РФ без VPN)
+
+Живой адрес: **https://bognyfken.github.io/bio-exam/**
+
+Репозиторий: `bognyfken/bio-exam`. `main` — исходники, ветка `gh-pages` — собранный
+сайт (содержимое `public/` в корне). Pages раздаёт ветку `gh-pages` / `/`.
+
+Передеплой после изменения контента/кода:
 
 ```bash
-# один раз — создать проект
-wrangler pages project create bio-exam --production-branch=main
+git add -A && git commit -m "…"        # фиксируем в main
+git push origin main
+git subtree push --prefix public origin gh-pages   # выкатываем public/ в gh-pages
+```
 
-# деплой (после каждого изменения контента/кода)
+> Токен GitHub без scope `workflow`, поэтому используется ветка `gh-pages`,
+> а не GitHub Actions. При изменении ассетов/контента — поднять `VERSION` в
+> `public/sw.js`, иначе у установивших PWA останется старый кэш.
+
+### Альтернатива — Cloudflare Pages
+
+(Изначальный хостинг; в РФ часто требует VPN.) Проект `bio-exam`,
+`CLOUDFLARE_ACCOUNT_ID=dac5848359ab4d74798b9d572259981e`, токен в окружении.
+
+```bash
 wrangler pages deploy public --project-name=bio-exam
 ```
 
-После деплоя — ссылка вида `https://bio-exam.pages.dev` (открывается с телефона).
+Адрес: `https://bio-exam.pages.dev`. Запасной вариант на случай переезда —
+российский хостинг (Timeweb / Yandex Object Storage / Beget) с доменом `.ru`.
