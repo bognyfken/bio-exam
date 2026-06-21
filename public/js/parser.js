@@ -129,7 +129,15 @@ export function parseKonspekt(md) {
     if (curTicket) {
       // Подпункт билета (жирный лид-ин) — собираем как «вопрос», строку оставляем в теле
       const sm = line.match(RE_SUBPOINT);
-      if (sm) curTicket.subpoints.push(stripMarkdownInline(`${sm[1]}) ${sm[2]}`));
+      if (sm) {
+        curTicket.subpoints.push(stripMarkdownInline(`${sm[1]}) ${sm[2]}`));
+        // В кратком конспекте подпункты идут подряд без пустых строк — marked
+        // склеивает их в один абзац. Вставляем пустую строку перед подпунктом,
+        // чтобы каждый стал отдельным абзацем (а), б), в) — с новой строки).
+        // Идемпотентно: если строка-разделитель уже есть, ничего не добавляем.
+        const prev = bodyBuf[bodyBuf.length - 1];
+        if (bodyBuf.length && prev.trim() !== '') bodyBuf.push('');
+      }
       bodyBuf.push(line);
     }
   }

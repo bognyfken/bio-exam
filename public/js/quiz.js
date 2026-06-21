@@ -1,7 +1,7 @@
 // quiz.js — режим «Тест» (MCQ из content/quiz.json).
 
 import { el, clear, shuffle } from './util.js';
-import { tests } from './store.js';
+import { tests, session } from './store.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г', 'Д', 'Е'];
 
@@ -13,6 +13,32 @@ const state = {
   answers: [],   // { q, picked, correct }
   scopeLabel: 'Все разделы',
 };
+
+function active() { return state.questions.length > 0 && state.pos < state.questions.length; }
+
+function persist() {
+  if (!active()) { session.setQuiz(null); return; }
+  session.setQuiz({
+    scope: state.scope, scopeLabel: state.scopeLabel, count: state.count,
+    qids: state.questions.map((q) => q.id),
+    pos: state.pos,
+    answers: state.answers.map((a) => ({ id: a.q.id, picked: a.picked, correct: a.correct })),
+  });
+}
+
+// Восстановить незавершённый тест из localStorage (после перезагрузки PWA).
+function ensureRestored(ctx) {
+  if (state.questions.length) return;
+  const s = session.getQuiz();
+  if (!s || !Array.isArray(s.qids)) return;
+  const byId = new Map((ctx.quiz || []).map((q) => [q.id, q]));
+  const questions = s.qids.map((id) => byId.get(id)).filter(Boolean);
+  if (questions.length !== s.qids.length || s.pos >= questions.length) { session.setQuiz(null); return; }
+  state.scope = s.scope; state.scopeLabel = s.scopeLabel; state.count = s.count;
+  state.questions = questions;
+  state.pos = s.pos;
+  state.answers = (s.answers || []).map((a) => ({ q: byId.get(a.id), picked: a.picked, correct: a.correct })).filter((a) => a.q);
+}
 
 function poolForScope(ctx) {
   const all = ctx.quiz || [];
@@ -58,18 +84,48 @@ function renderSetup(ctx, container) {
   sel.appendChild(ogt);
   sel.value = state.scope;
 
-  // Count chips
+  // Сколько вопросов: чипсы 10/20/50/100/Все + поле «своё число».
   const chips = el('div', { class: 'chips' });
-  [['10', 10], ['20', 20], ['Все', 'all']].forEach(([label, val]) => {
-    const c = el('button', { class: 'chip' + (state.count === val ? ' is-active' : ''), text: label,
-      onclick: () => { state.count = val; chips.querySelectorAll('.chip').forEach((x) => x.classList.remove('is-active')); c.classList.add('is-active'); } });
+  const customInput = el('input', { type: 'number', min: '1', step: '1', inputmode: 'numeric',
+    placeholder: 'своё число', class: 'count-input' });
+
+  const syncChips = () => chips.querySelectorAll('.chip').forEach((x) =>
+    x.classList.toggle('is-active', x.dataset.val === String(state.count)));
+
+  [['10', 10], ['20', 20], ['50', 50], ['100', 100], ['Все', 'all']].forEach(([label, val]) => {
+    const c = el('button', { class: 'chip', text: label, dataset: { val: String(val) },
+      onclick: () => { state.count = val; customInput.value = ''; syncChips(); } });
     chips.appendChild(c);
   });
+  syncChips();
+
+  customInput.addEventListener('input', () => {
+    const n = parseInt(customInput.value, 10);
+    if (Number.isFinite(n) && n > 0) { state.count = n; chips.querySelectorAll('.chip').forEach((x) => x.classList.remove('is-active')); }
+  });
+  // Если активный count не из чипсов — показать его в поле
+  if (![10, 20, 50, 100, 'all'].includes(state.count)) customInput.value = String(state.count);
+
+  // Незавершённый тест — предложить продолжить
+  if (active()) {
+    container.appendChild(el('div', { class: 'card resume-card' }, [
+      el('div', {}, [
+        el('div', { class: 'resume-title', text: 'Есть незаконченный тест' }),
+        el('div', { class: 'resume-sub', text: `${state.scopeLabel} · вопрос ${state.pos + 1} из ${state.questions.length}` }),
+      ]),
+      el('button', { class: 'btn btn-primary', text: 'Продолжить',
+        onclick: () => renderQuestion(ctx, container) }),
+    ]));
+  }
 
   container.appendChild(el('div', { class: 'card quiz-setup' }, [
     el('h2', { class: 'h-title', text: 'Тест' }),
     el('div', {}, [ el('div', { class: 'field-label', text: 'Область' }), sel ]),
-    el('div', {}, [ el('div', { class: 'field-label', text: 'Сколько вопросов' }), chips ]),
+    el('div', {}, [
+      el('div', { class: 'field-label', text: 'Сколько вопросов' }),
+      chips,
+      el('div', { class: 'count-custom' }, [ customInput ]),
+    ]),
     el('button', { class: 'btn btn-primary', text: 'Начать тест', onclick: () => {
       state.scope = sel.value;
       state.scopeLabel = sel.options[sel.selectedIndex].text.replace(/\s*\(\d+.*\)$/, '');
@@ -84,7 +140,8 @@ function start(ctx, container) {
   state.questions = pool;
   state.pos = 0;
   state.answers = [];
-  if (!pool.length) { renderSetup(ctx, container); return; }
+  if (!pool.length) { session.setQuiz(null); renderSetup(ctx, container); return; }
+  persist();
   renderQuestion(ctx, container);
 }
 
@@ -129,11 +186,18 @@ function renderQuestion(ctx, container) {
 
       const isLast = state.pos === total - 1;
       foot.appendChild(el('button', { class: 'btn btn-primary', text: isLast ? 'Показать результат' : 'Дальше →',
-        onclick: () => { state.pos++; isLast ? renderResult(ctx, container) : renderQuestion(ctx, container); } }));
+        onclick: () => { state.pos++; persist(); isLast ? renderResult(ctx, container) : renderQuestion(ctx, container); } }));
     });
     optionsBox.appendChild(btn);
   });
 
+  const toolbar = el('div', { class: 'read-toolbar' }, [
+    el('button', { class: 'btn btn-sm btn-ghost', text: '← К настройкам',
+      onclick: () => renderSetup(ctx, container) }),
+    el('span', { class: 'spacer' }),
+  ]);
+
+  container.appendChild(toolbar);
   container.appendChild(el('div', { class: 'card' }, [
     progress, meta,
     el('div', { class: 'q-question', text: q.question }),
@@ -142,6 +206,7 @@ function renderQuestion(ctx, container) {
 }
 
 function renderResult(ctx, container) {
+  session.setQuiz(null); // тест завершён — снимок больше не нужен
   clear(container);
   const total = state.answers.length;
   const correct = state.answers.filter((a) => a.correct).length;
@@ -204,5 +269,9 @@ function renderResult(ctx, container) {
 }
 
 export function render(container, ctx) {
-  renderSetup(ctx, container);
+  // Незавершённый тест (в памяти или из localStorage) — продолжаем,
+  // иначе показываем экран настройки теста.
+  ensureRestored(ctx);
+  if (active()) renderQuestion(ctx, container);
+  else renderSetup(ctx, container);
 }
