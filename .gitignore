@@ -3,5 +3,10 @@ node_modules/
 *.log
 .env
 .env.*
+!.env.example
 .wrangler/
 dist/
+
+# рабочие скриншоты Playwright (если появятся)
+.playwright-mcp/
+*.png.tmp
