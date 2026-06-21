@@ -23,7 +23,7 @@ export function render(container, ctx) {
   container.appendChild(el('div', { class: 'home-hero' }, [
     el('div', { class: 'emoji', text: '🧬' }),
     el('h1', { text: 'Биология' }),
-    el('p', { text: 'Подготовка к экзамену · Лечебное дело / Педиатрия' }),
+    el('p', { text: 'Подготовка к экзамену · Лечебное дело' }),
   ]));
 
   // Сводка

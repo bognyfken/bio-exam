@@ -167,3 +167,11 @@ async function main() {
 }
 
 main();
+
+// ── Service worker (офлайн) ────────────────────────────
+// Регистрируем только по http(s) — на file:// SW недоступен.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW не зарегистрирован:', e));
+  });
+}
