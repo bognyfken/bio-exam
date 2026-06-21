@@ -355,16 +355,15 @@ mark { background: var(--mnemo-bg); color: var(--mnemo-ink); border-radius: 3px;
 .quick-actions .btn { padding: 16px; flex-direction: column; gap: 6px; }
 .quick-actions .btn svg { width: 26px; height: 26px; }
 
-/* ── Десктоп: навигация в шапке, drawer как сайдбар ─ */
+/* ── Десктоп: таб-бар остаётся ВНИЗУ (плавающая «пилюля» по центру) ─ */
 @media (min-width: 880px) {
-  body { padding-bottom: 0; }
   .tabbar {
-    position: sticky; top: 0; bottom: auto; height: var(--topbar-h);
-    max-width: var(--maxw); margin: 0 auto; border-top: none; background: transparent;
-    justify-content: center; gap: 4px; z-index: 30; box-shadow: none;
+    left: 50%; right: auto; transform: translateX(-50%);
+    bottom: 16px; height: 58px; width: auto;
+    border: 1px solid var(--border); border-top: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow); padding: 0 6px; gap: 4px;
   }
-  .topbar { z-index: 60; }
-  .tab { flex: 0 0 auto; flex-direction: row; gap: 7px; padding: 8px 16px; border-radius: 10px; font-size: .9rem; }
+  .tab { flex: 0 0 auto; flex-direction: row; gap: 7px; padding: 8px 16px; border-radius: 11px; font-size: .9rem; }
   .tab svg { width: 19px; height: 19px; }
   .tab.is-active { background: var(--accent-soft); }
 }
